@@ -4,7 +4,7 @@ function verifyClient(code, logic, evaluate, testCase) {
     check(JSON.stringify(actual) === JSON.stringify(expected),
       message + ": " + JSON.stringify(actual) + " != " + JSON.stringify(expected));
   }
-  function makeFixture({ headReady = true } = {}) {
+  function makeFixture({ headReady = true, warmDirectory = false } = {}) {
     const hooks = [];
     let cursor = 0;
     const styles = new Set();
@@ -14,6 +14,8 @@ function verifyClient(code, logic, evaluate, testCase) {
     const slotRows = [];
     const cleanups = [];
     const selections = [];
+    let directoryCached = warmDirectory;
+    let declaredServices = new Set();
     const snapshot = {
       current: { provider: "a", model: "reasoning", reasoningEffort: "high" },
       pending: null, status: "ready", error: null, failures: [],
@@ -87,7 +89,29 @@ function verifyClient(code, logic, evaluate, testCase) {
     const ctx = {
       effect(fn) { const cleanup = fn(); cleanups.push(cleanup); return cleanup; },
       sessions: { subagentAddress: id => id === "subagent" ? {} : undefined },
-      modelDirectories: { directoryFor: id => { check(id === "session", "wrong session directory"); return controller; } },
+      get remote() {
+        if (!declaredServices.has("remote")) return undefined;
+        return {
+          get session() {
+            if (!declaredServices.has("remote.session")) return undefined;
+            return { selectModel() {} };
+          }
+        };
+      },
+      modelDirectories: {
+        directoryFor: id => {
+          check(id === "session", "wrong session directory");
+          // ModelDirectoryResolver receives the accessing Cordis context.
+          // A warm directory returns before reading this.ctx.remote.session;
+          // cold creation needs that declared facade, just as the real service.
+          if (!directoryCached) {
+            const remote = ctx.remote.session;
+            check(typeof remote.selectModel === "function", "missing session remote facade");
+            directoryCached = true;
+          }
+          return controller;
+        }
+      },
       slots: {
         entries: () => entries,
         inject(name, fn) { check(name === "conversation.input.model", "wrong slot injection"); cleanups.push(fn()); },
@@ -99,11 +123,13 @@ function verifyClient(code, logic, evaluate, testCase) {
     };
     function load(source = code) {
       evaluate(source, globals);
-      return registrations.at(-1).factory(specifier => {
+      const plugin = registrations.at(-1).factory(specifier => {
         if (specifier === "react") return React;
         if (specifier === "react-dom") return ReactDOM;
         throw new Error("unexpected external: " + specifier);
       });
+      declaredServices = new Set(plugin.inject);
+      return plugin;
     }
     function setup() {
       const plugin = load();
@@ -155,7 +181,7 @@ function verifyClient(code, logic, evaluate, testCase) {
     const plugin = f.load(code + "\n" + code);
     equal(f.registrations.map(row => row.id), ["dsh-source-fold", "dsh-source-fold"], "module ids");
     check(typeof plugin.apply === "function", "missing plugin apply");
-    equal(plugin.inject, ["slots", "modelDirectories", "sessions"], "required services");
+    equal(plugin.inject, ["slots", "modelDirectories", "sessions", "remote", "remote.session"], "required services");
     check(f.styles.size === 0 && f.slotRows.length === 0, "factory must not mount");
   });
   testCase("slot replacement uses the shared directory, skips subagents, and disposes", () => {
@@ -310,6 +336,16 @@ function verifyClient(code, logic, evaluate, testCase) {
     check(all(header, node => node.type === "button" || typeof node.type === "function" || node.type === "svg").length === 0, "decorative controls must be absent");
     check(all(header, cls("dsf-effort-label")).length === 1, "effort label must remain");
     check(all(controls, cls("dsf-slider-captions")).length === 0, "control card should use the minimal reference slider layout");
+  });
+
+  testCase("cold and warm directory creation both retain the custom model seat", () => {
+    for (const warmDirectory of [false, true]) {
+      const f = makeFixture({ warmDirectory });
+      const app = open(f);
+      const tree = app.render();
+      check(one(tree, cls("dsf-island")), "directory creation must not abdicate to the native selector");
+      check(app.props.controller === f.controller, "shared controller must survive cold creation");
+    }
   });
 
 }

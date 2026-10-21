@@ -528,6 +528,6 @@ window.__ModuleLoader__.load({
       });
     }
     
-    return { name: "dsh-source-fold", inject: ["slots", "modelDirectories", "sessions"], apply };
+    return { name: "dsh-source-fold", inject: ["slots", "modelDirectories", "sessions", "remote", "remote.session"], apply };
   }
 });
