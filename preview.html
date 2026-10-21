@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH Source Fold · 模型岛预览</title>
+<style>
+:root{color-scheme:dark;--dsw-alias-bg-module-platform:#2c2c2e;--dsw-alias-label-primary:#eeeeef;--dsw-alias-label-secondary:#d0d0d4;--dsw-alias-label-caption:#98989f;--dsw-alias-state-business-primary:#3787ff;--dsw-alias-interactive-bg-hover:#ffffff10}
+:root[data-theme="light"]{color-scheme:light;--dsw-alias-bg-module-platform:#fafafa;--dsw-alias-label-primary:#222226;--dsw-alias-label-secondary:#494950;--dsw-alias-label-caption:#808088;--dsw-alias-interactive-bg-hover:#00000009}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#18181a;color:var(--dsw-alias-label-primary);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;transition:background .3s}
+[data-theme="light"] body{background:#ececf0}header{display:flex;align-items:center;justify-content:space-between;padding:24px 30px}header strong{font-size:15px}header small{display:block;margin-top:6px;font-size:12px;color:var(--dsw-alias-label-caption)}#theme{border:1px solid #8884;border-radius:18px;background:transparent;color:inherit;padding:8px 14px;cursor:pointer}
+main{max-width:740px;margin:auto;padding:30px 20px 160px}.intro{max-width:460px;margin:6vh auto;text-align:center}.intro h1{font-size:32px;letter-spacing:-1px;font-weight:550}.intro p{font-size:14px;line-height:1.9;color:var(--dsw-alias-label-caption)}
+.composer{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);width:min(740px,calc(100% - 32px));border:1px solid #8883;border-radius:26px;background:var(--dsw-alias-bg-module-platform);padding:20px}.placeholder{height:42px;color:var(--dsw-alias-label-caption);font-size:14px}.tools{display:flex;align-items:center;justify-content:space-between}.hint{font-size:11px;color:var(--dsw-alias-label-caption)}#preview-status{color:#ff8d8d;font-size:13px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header><div><strong>模型岛</strong><small>与插件共用同一份界面代码 · 示例数据</small></div><button id="theme">切换明暗</button></header>
+<main><div class="intro"><h1>少一点寻找，多一点流动。</h1><p>点击模型名称，先选择来源，再选择模型。<br>拖动滑块预览思考档位，松手后应用。<br>不支持推理强度的示例模型会自动隐藏滑块。</p></div><div id="preview-status"></div></main>
+<div class="composer"><div class="placeholder">输入消息…</div><div class="tools"><span class="hint">示例预览 · 不会发送对话</span><div id="model-seat"></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script>
+window.__ModuleLoader__={load:function(row){window.previewPlugin=row.factory(function(id){if(id==="react")return window.React;if(id==="react-dom")return window.ReactDOM;throw new Error(id);});}};
+</script>
+<script src="./client.js"></script>
+<script>
+(function(){
+try{
+var h=React.createElement,listeners=new Set();
+var state={
+ current:{provider:"gateway",model:"gpt-sol",reasoningEffort:"high"},pending:null,status:"ready",error:null,failures:[],
+ groups:[
+  {id:"gateway",name:"我的 API 网关",models:[
+   {id:"gpt-sol",name:"GPT-6.1 Sol",reasoning:{defaultEffort:"medium",efforts:[{id:"low",name:"低"},{id:"medium",name:"中"},{id:"high",name:"高"},{id:"max",name:"最高"}]}},
+   {id:"gpt-astra",name:"GPT-6 Astra",reasoning:{defaultEffort:"high",efforts:[{id:"low",name:"低"},{id:"medium",name:"中"},{id:"high",name:"高"},{id:"max",name:"最高"}]}},
+   {id:"fast",name:"快速模型 · 无思考档位"}
+  ]},
+  {id:"deepseek",name:"DeepSeek 示例来源",models:[
+   {id:"reasoner",name:"推理模型",reasoning:{defaultEffort:"high",efforts:[{id:"medium",name:"标准"},{id:"high",name:"深入"}]}},
+   {id:"chat",name:"通用对话模型 · 无思考档位"}
+  ]},
+  {id:"local",name:"本地模型",models:[{id:"local-chat",name:"本地助手 · 无思考档位"}]},
+  {id:"openrouter",name:"OpenRouter 示例来源",models:Array.from({length:18},function(_,i){return{id:"demo-"+i,name:"示例模型 "+String(i+1).padStart(2,"0"),reasoning:{defaultEffort:"low",efforts:[{id:"low",name:"低"},{id:"high",name:"高"}]}};})}
+ ]};
+function publish(patch){state=Object.assign({},state,patch);listeners.forEach(function(fn){fn();});}
+var controller={
+ store:{subscribe:function(fn){listeners.add(fn);return function(){listeners.delete(fn);};},getSnapshot:function(){return state;}},
+ load:function(){return Promise.resolve(state);},
+ select:function(selection){publish({pending:selection,status:"selecting"});return new Promise(function(resolve){setTimeout(function(){
+ var group=state.groups.find(function(g){return g.id===selection.provider;});
+ var model=group.models.find(function(m){return m.id===selection.model;});
+ var next=Object.assign({},selection);
+ if(next.reasoningEffort===undefined&&model.reasoning)next.reasoningEffort=model.reasoning.defaultEffort;
+ publish({current:next,pending:null,status:"ready"});resolve({ok:true});
+ },380);});}
+};
+var component;
+previewPlugin.apply({
+ effect:function(fn){fn();},
+ sessions:{subagentAddress:function(){return undefined;}},
+ modelDirectories:{directoryFor:function(){return controller;}},
+ slots:{entries:function(){return[];},inject:function(name,fn){fn();},register:function(opts,view){component=view;return function(){};}}
+});
+var root=ReactDOM.createRoot(document.getElementById("model-seat"));
+ReactDOM.flushSync(function(){root.render(h(component,{controller:controller,available:true,sessionKey:"preview",locked:false}));});
+document.querySelector(".dsf-trigger").click();
+document.getElementById("theme").onclick=function(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==="light"?"dark":"light";};
+}catch(error){document.getElementById("preview-status").textContent="预览未能加载："+error.message+"。请检查 React CDN 是否可访问。";}
+})();
+</script>
+</body>
+</html>

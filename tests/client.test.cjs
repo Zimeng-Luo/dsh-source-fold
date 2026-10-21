@@ -5,4 +5,5 @@ const vm = require("node:vm");
 const { verifyClient } = require("./client-contract.cjs");
 
 const source = readFileSync(join(__dirname, "..", "client.js"), "utf8");
-verifyClient(source, (code, globals) => vm.runInNewContext(code, globals), test);
+const logic = readFileSync(join(__dirname, "..", "src", "logic.js"), "utf8");
+verifyClient(source, logic, (code, globals) => vm.runInNewContext(code, globals), test);

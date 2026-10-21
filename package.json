@@ -1,7 +1,7 @@
 {
   "name": "dsh-source-fold",
-  "version": "0.1.1",
-  "description": "DeepSeek Harness 模型选择器按来源独立折叠并记住状态",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness 模型岛：来源与模型分层滑动选择、自适应 Default 思考强度滑块",
   "type": "module",
   "main": "./index.js",
   "exports": {
@@ -15,11 +15,16 @@
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
-    "tests/*.cjs"
+    "src/*.js",
+    "src/*.css",
+    "scripts/*.cjs",
+    "tests/*.cjs",
+    "preview.html"
   ],
   "scripts": {
+    "build": "node scripts/build.cjs",
     "test": "node --test tests/client.test.cjs",
-    "check": "node --check index.js && node --check client.js && npm test",
+    "check": "node scripts/build.cjs --check && node --check index.js && node --check client.js && npm test",
     "prepack": "npm run check"
   },
   "license": "MIT",
@@ -43,7 +48,11 @@
     },
     "client": {
       "platform": "web",
-      "inject": []
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ]
     }
   }
 }
