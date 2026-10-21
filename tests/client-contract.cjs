@@ -4,7 +4,7 @@ function verifyClient(code, logic, evaluate, testCase) {
     check(JSON.stringify(actual) === JSON.stringify(expected),
       message + ": " + JSON.stringify(actual) + " != " + JSON.stringify(expected));
   }
-  function makeFixture({ headReady = true, warmDirectory = false } = {}) {
+  function makeFixture({ headReady = true, warmDirectory = false, storage = new Map(), storageError = false } = {}) {
     const hooks = [];
     let cursor = 0;
     const styles = new Set();
@@ -83,7 +83,17 @@ function verifyClient(code, logic, evaluate, testCase) {
       removeEventListener(type, fn) { listeners.get(type)?.delete(fn); }
     };
     const globals = {
-      window: { innerWidth: 1000, innerHeight: 800, __ModuleLoader__: { load: row => registrations.push(row) } },
+      window: {
+        innerWidth: 1000, innerHeight: 800,
+        __ModuleLoader__: { load: row => registrations.push(row) },
+        get localStorage() {
+          if (storageError) throw new Error("storage access denied");
+          return {
+            getItem: key => storage.get(key) ?? null,
+            setItem: (key, value) => storage.set(key, value)
+          };
+        }
+      },
       document: doc
     };
     const ctx = {
@@ -170,9 +180,8 @@ function verifyClient(code, logic, evaluate, testCase) {
     one(app.render(), cls("dsf-trigger")).props.onClick();
     return app;
   }
-  function helpers() {
-    const window = {};
-    evaluate(logic + "\nwindow.helpers = { effortChoices, routeKey, currentModel, effortIndex, selectionForEffort, matchesQuery, panelMetrics };", { window });
+  function helpers(window = {}) {
+    evaluate(logic + "\nwindow.helpers = { effortChoices, routeKey, currentModel, effortIndex, selectionForEffort, matchesQuery, panelMetrics, normalizePinnedSources, pinnedSourcesFirst, createPinnedSourcesStore };", { window });
     return window.helpers;
   }
 
@@ -346,6 +355,103 @@ function verifyClient(code, logic, evaluate, testCase) {
       check(one(tree, cls("dsf-island")), "directory creation must not abdicate to the native selector");
       check(app.props.controller === f.controller, "shared controller must survive cold creation");
     }
+  });
+
+  testCase("source pins reorder without navigating, persist by id, and restore catalog order when removed", () => {
+    const storage = new Map();
+    const f = makeFixture({ storage });
+    const app = open(f);
+    one(app.render(), attr("aria-label", "切换模型，选择来源")).props.onClick();
+    const ids = () => all(one(app.render(), attr("data-page", 1)), cls("dsf-source-row")).map(row => row.props["data-source-id"]);
+    equal(ids(), ["a", "b"], "original order");
+    one(app.render(), attr("data-pin-source-id", "b")).props.onClick();
+    equal(ids(), ["b", "a"], "pinned source first");
+    check(one(app.render(), cls("dsf-island")).props["data-view"] === 1, "pin must not navigate");
+    check(f.selections.length === 0, "pin must not select a model");
+    check(one(app.render(), attr("data-pin-source-id", "b")).props["aria-pressed"] === true, "pin state must be accessible");
+    const restored = open(makeFixture({ storage }));
+    one(restored.render(), attr("aria-label", "切换模型，选择来源")).props.onClick();
+    equal(all(one(restored.render(), attr("data-page", 1)), cls("dsf-source-row")).map(row => row.props["data-source-id"]), ["b", "a"], "pins survive a new module instance");
+    one(app.render(), attr("data-pin-source-id", "a")).props.onClick();
+    equal(ids(), ["a", "b"], "multiple pins keep catalog order");
+    one(app.render(), attr("data-pin-source-id", "b")).props.onClick();
+    one(app.render(), attr("data-pin-source-id", "a")).props.onClick();
+    equal(ids(), ["a", "b"], "unpin restores original order");
+    equal(JSON.parse(storage.get("dsh-source-fold:pinned-sources:v1")), [], "unpin persisted");
+  });
+
+  testCase("pins retain search filtering and distinguish sources with the same display name", () => {
+    const storage = new Map();
+    const f = makeFixture({ storage });
+    f.snapshot.groups[1].name = f.snapshot.groups[0].name;
+    const app = open(f);
+    one(app.render(), attr("aria-label", "切换模型，选择来源")).props.onClick();
+    one(app.render(), attr("data-pin-source-id", "b")).props.onClick();
+    check(!one(app.render(), attr("data-pin-source-id", "a")).props["aria-pressed"], "display names must not identify pins");
+    one(one(app.render(), attr("data-page", 1)), attr("aria-label", "搜索来源或模型")).props.onChange({ target: { value: "普通模型" } });
+    equal(all(one(app.render(), attr("data-page", 1)), cls("dsf-source-row")).map(row => row.props["data-source-id"]), ["a"], "unmatched pins must stay hidden");
+    one(one(app.render(), attr("data-page", 1)), attr("aria-label", "搜索来源或模型")).props.onChange({ target: { value: "" } });
+    one(app.render(), attr("data-source-id", "b")).props.onClick();
+    check(one(app.render(), cls("dsf-island")).props["data-view"] === 2, "pinned source must still open its models");
+  });
+
+  testCase("invalid pin data is harmless and missing sources retain their pins for later", () => {
+    const key = "dsh-source-fold:pinned-sources:v1";
+    for (const raw of ["{", "null", "42", "{}"]) {
+      const f = makeFixture({ storage: new Map([[key, raw]]) });
+      const app = open(f);
+      one(app.render(), attr("aria-label", "切换模型，选择来源")).props.onClick();
+      check(all(one(app.render(), attr("data-page", 1)), cls("dsf-source-row")).length === 2, "invalid storage broke sources");
+    }
+    const h = helpers();
+    equal(h.normalizePinnedSources(["b", "b", 1, "", null, "missing"]), ["b", "missing"], "sanitize ids");
+    const groups = [{ id: "a" }, { id: "b" }];
+    equal(h.pinnedSourcesFirst(groups, ["missing", "b"]).map(g => g.id), ["b", "a"], "unknown ids ignored");
+    equal(groups.map(g => g.id), ["a", "b"], "must not mutate directory");
+    equal(h.pinnedSourcesFirst([...groups, { id: "missing" }], ["missing", "b"]).map(g => g.id), ["b", "missing", "a"], "returning sources remain pinned");
+  });
+
+  testCase("unavailable storage keeps pins in memory and explains that persistence failed", () => {
+    const f = makeFixture({ storageError: true });
+    const app = open(f);
+    one(app.render(), attr("aria-label", "切换模型，选择来源")).props.onClick();
+    one(app.render(), attr("data-pin-source-id", "b")).props.onClick();
+    const page = one(app.render(), attr("data-page", 1));
+    equal(all(page, cls("dsf-source-row")).map(row => row.props["data-source-id"]), ["b", "a"], "memory-only pins should work");
+    check(all(page, node => node.props?.children?.some(child => typeof child === "string" && child.includes("置顶暂未保存"))).length > 0, "must explain persistence failure");
+    check(f.selections.length === 0, "storage denial must not affect model selection");
+  });
+
+  testCase("shared pin subscribers update and storage events synchronize other windows with cleanup", () => {
+    const key = "dsh-source-fold:pinned-sources:v1";
+    const data = new Map();
+    const events = new Map();
+    const localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
+    const h = helpers({
+      localStorage,
+      addEventListener(type, listener) { events.set(type, listener); },
+      removeEventListener(type, listener) { if (events.get(type) === listener) events.delete(type); }
+    });
+    const store = h.createPinnedSourcesStore();
+    let changes = 0;
+    const unsubscribe1 = store.subscribe(() => changes++);
+    const unsubscribe2 = store.subscribe(() => changes++);
+    const before = store.getSnapshot();
+    check(store.getSnapshot() === before, "snapshot must be stable between changes");
+    store.toggle("b");
+    check(changes === 2, "all seats must receive the update");
+    data.set(key, JSON.stringify(["a"]));
+    events.get("storage")({ key: "unrelated" });
+    equal(store.getSnapshot().ids, ["b"], "unrelated storage events ignored");
+    events.get("storage")({ key });
+    equal(store.getSnapshot().ids, ["a"], "external pin update");
+    data.clear();
+    events.get("storage")({ key: null });
+    equal(store.getSnapshot().ids, [], "external clear");
+    unsubscribe1();
+    check(events.has("storage"), "other seat still needs listener");
+    unsubscribe2();
+    check(!events.has("storage"), "storage listener leaked");
   });
 
 }

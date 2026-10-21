@@ -1,5 +1,6 @@
 function createIsland(React, ReactDOM) {
   const { createElement: h, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore, useId } = React;
+  const pinnedSourcesStore = createPinnedSourcesStore();
   function Icon({ kind, size = 18, className = "" }) {
     const paths = {
       chevron: "m9 5 7 7-7 7",
@@ -7,7 +8,8 @@ function createIsland(React, ReactDOM) {
       check: "m5 12 4 4L19 6",
       models: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
       search: "m20 20-4.5-4.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",
-      close: "m6 6 12 12M18 6 6 18"
+      close: "m6 6 12 12M18 6 6 18",
+      pin: "M8 3h8l-1 5 3 3v2H6v-2l3-3-1-5ZM12 13v8"
     };
     return h("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none",
       stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round",
@@ -18,6 +20,7 @@ function createIsland(React, ReactDOM) {
       listener => controller.store.subscribe(listener),
       () => controller.store.getSnapshot()
     );
+    const pins = useSyncExternalStore(pinnedSourcesStore.subscribe, pinnedSourcesStore.getSnapshot);
     const [stage, setStage] = useState("closed");
     const [page, setPage] = useState(0);
     const [sourceId, setSourceId] = useState(null);
@@ -50,9 +53,9 @@ function createIsland(React, ReactDOM) {
     const error = localError || state.error;
     const groups = state.groups || [];
     const source = groups.find(group => group.id === sourceId);
-    const sources = groups.filter(group =>
+    const sources = pinnedSourcesFirst(groups.filter(group =>
       matchesQuery(sourceQuery, [group.name, group.id, ...group.models.map(model => model.name)])
-    );
+    ), pins.ids);
     const models = (source?.models || []).filter(model =>
       matchesQuery(modelQuery, [model.name, model.id])
     );
@@ -152,7 +155,7 @@ function createIsland(React, ReactDOM) {
           layoutHeight: window.innerHeight,
           composerWidth: composer?.getBoundingClientRect().width,
           uiScale: fontSize / 13
-        }, (error ? 1 : 0) + (page === 1 ? failures.length : 0));
+        }, (error ? 1 : 0) + (page === 1 ? failures.length + (pins.persisted ? 0 : 1) : 0));
         setPosition(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
       };
       place();
@@ -172,7 +175,7 @@ function createIsland(React, ReactDOM) {
         visible?.removeEventListener("resize", place);
         visible?.removeEventListener("scroll", place);
       };
-    }, [present, page, count, adjustable, error, failures.length]);
+    }, [present, page, count, adjustable, error, failures.length, pins.persisted]);
 
     useLayoutEffect(() => {
       if (stage !== "open") return;
@@ -338,18 +341,26 @@ function createIsland(React, ReactDOM) {
         failures.map(failure => h("div", { key: "failure:" + failure.id }, notice(
           (failure.name || failure.id) + "：" + (failure.message || "加载失败")
         ))),
+        !pins.persisted && notice("置顶暂未保存到本机，当前窗口内仍可使用；再次点击可重试保存。", false),
         sources.map(group => {
           const current = group.id === state.current?.provider;
-          return h("button", { key: group.id, type: "button", className: "dsf-row dsf-source-row",
-            "data-source-id": group.id, "data-selected": current, disabled: busy || !group.models.length,
-            onClick: () => { setSourceId(group.id); navigate(2); } },
-            h("span", { className: "dsf-source-icon" }, h(Icon, { kind: "models", size: 18 })),
-            h("span", { className: "dsf-row-copy" },
-              h("span", { className: "dsf-row-title", title: group.name }, group.name),
-              h("span", { className: "dsf-subtitle" },
-                current ? "当前 · " + (found?.model.name || "模型暂不可用") : group.models.length + " 个模型")),
-            current && h("span", { className: "dsf-current-badge" }, "当前"),
-            h(Icon, { kind: "chevron", size: 17 }));
+          const pinned = pins.ids.includes(group.id);
+          const pinLabel = (pinned ? "取消置顶来源：" : "置顶来源：") + group.name;
+          return h("div", { key: group.id, className: "dsf-source-item", "data-pinned": pinned },
+            h("button", { type: "button", className: "dsf-row dsf-source-row",
+              "data-source-id": group.id, "data-selected": current, disabled: busy || !group.models.length,
+              onClick: () => { setSourceId(group.id); navigate(2); } },
+              h("span", { className: "dsf-source-icon" }, h(Icon, { kind: "models", size: 18 })),
+              h("span", { className: "dsf-row-copy" },
+                h("span", { className: "dsf-row-title", title: group.name }, group.name),
+                h("span", { className: "dsf-subtitle" },
+                  current ? "当前 · " + (found?.model.name || "模型暂不可用") : group.models.length + " 个模型")),
+              current && h("span", { className: "dsf-current-badge" }, "当前"),
+              h(Icon, { kind: "chevron", size: 17 })),
+            h("button", { type: "button", className: "dsf-source-pin", title: pinLabel,
+              "aria-label": pinLabel, "aria-pressed": pinned, "data-pin-source-id": group.id,
+              onClick: () => pinnedSourcesStore.toggle(group.id) },
+              h(Icon, { kind: "pin", size: 16 })));
         }),
         !sources.length && state.status !== "loading" && notice(sourceQuery ? "没有匹配的来源" : "暂无可用来源", false)));
 

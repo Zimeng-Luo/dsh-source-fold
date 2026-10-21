@@ -79,3 +79,62 @@ function panelMetrics(page, count, adjustable, anchor, viewport, noticeCount = 0
       : { top: anchorBottom + gap })
   };
 }
+
+const PINNED_SOURCES_KEY = "dsh-source-fold:pinned-sources:v1";
+
+function normalizePinnedSources(value) {
+  return Array.isArray(value)
+    ? [...new Set(value.filter(id => typeof id === "string" && id.length > 0))]
+    : [];
+}
+
+function pinnedSourcesFirst(groups, ids) {
+  const pinned = new Set(ids);
+  return [...groups.filter(group => pinned.has(group.id)), ...groups.filter(group => !pinned.has(group.id))];
+}
+
+function createPinnedSourcesStore() {
+  function read() {
+    try {
+      const raw = window.localStorage.getItem(PINNED_SOURCES_KEY);
+      try { return normalizePinnedSources(raw === null ? [] : JSON.parse(raw)); }
+      catch { return []; }
+    } catch { return null; }
+  }
+  let snapshot = { ids: read() || [], persisted: true };
+  const listeners = new Set();
+  const emit = () => { for (const listener of listeners) listener(); };
+  function refresh(event) {
+    if (event.key !== null && event.key !== PINNED_SOURCES_KEY) return;
+    const ids = read();
+    if (ids === null || (snapshot.persisted && JSON.stringify(ids) === JSON.stringify(snapshot.ids))) return;
+    snapshot = { ids, persisted: true };
+    emit();
+  }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe(listener) {
+      if (!listeners.size) {
+        window.addEventListener("storage", refresh);
+        refresh({ key: PINNED_SOURCES_KEY });
+      }
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size) window.removeEventListener("storage", refresh);
+      };
+    },
+    toggle(id) {
+      if (typeof id !== "string" || !id) return;
+      const previous = snapshot.persisted ? (read() || snapshot.ids) : snapshot.ids;
+      const ids = previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id];
+      let persisted = false;
+      try {
+        window.localStorage.setItem(PINNED_SOURCES_KEY, JSON.stringify(ids));
+        persisted = true;
+      } catch {}
+      snapshot = { ids, persisted };
+      emit();
+    }
+  };
+}

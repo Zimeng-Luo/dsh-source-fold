@@ -92,3 +92,10 @@
 .dsf-island .dsf-slider-input{padding:0;border:0;background:transparent;box-sizing:border-box;min-width:0}
 
 @media(prefers-reduced-motion:reduce){.dsf-island[data-stage="open"]{animation:none}}
+
+.dsf-source-item{position:relative;display:flow-root}
+.dsf-source-item .dsf-source-row{padding-right:calc(46px * var(--dsf-unit,1))}
+.dsf-island .dsf-source-pin{position:absolute;right:calc(3px * var(--dsf-unit,1));top:50%;transform:translateY(-50%);display:grid;place-items:center;width:calc(36px * var(--dsf-unit,1));height:calc(40px * var(--dsf-unit,1));padding:0;border:0;border-radius:calc(11px * var(--dsf-unit,1));background:transparent;color:var(--dsf-muted)}
+.dsf-island .dsf-source-pin:hover{background:color-mix(in srgb,var(--dsf-ink) 8%,transparent)}
+.dsf-island .dsf-source-pin[aria-pressed="true"]{color:var(--dsf-accent)}
+.dsf-source-pin[aria-pressed="true"] svg{fill:color-mix(in srgb,var(--dsf-accent) 18%,transparent)}
