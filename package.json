@@ -1,6 +1,6 @@
 {
   "name": "dsh-source-fold",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness 模型选择器按来源独立折叠并记住状态",
   "type": "module",
   "main": "./index.js",
@@ -14,10 +14,13 @@
     "client.js",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "tests/*.cjs"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check client.js"
+    "test": "node --test tests/client.test.cjs",
+    "check": "node --check index.js && node --check client.js && npm test",
+    "prepack": "npm run check"
   },
   "license": "MIT",
   "keywords": [

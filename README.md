@@ -46,14 +46,31 @@ git clone https://github.com/Zimeng-Luo/dsh-source-fold.git
 cd dsh-source-fold
 npm run check
 npm pack
-dsh plugin --profile web add ./dsh-source-fold-0.1.0.tgz
+dsh plugin --profile web add ./dsh-source-fold-0.1.1.tgz
 ```
 
 包内已包含宿主入口、浏览器入口和 Cordis bundle patch，不需要 npm install 或编译。
 
+### 从 0.1.0 更新或恢复启动
+
+关闭 DSH 后，在原来安装插件的 profile 中重新安装修复版。桌面端命令：
+
+```bash
+dsh plugin --profile desktop remove dsh-source-fold
+dsh plugin --profile desktop add github:Zimeng-Luo/dsh-source-fold#main
+```
+
+随后完全退出并重新启动 DSH。若原来使用其他 profile，请替换 `desktop`。
+没有可用 CLI 时，可在插件管理界面移除旧插件，再从本仓库重新安装；若错误页无法进入插件管理，请使用 CLI。
+仅重启不会更新已经安装的 0.1.0 文件。
+
 ## 兼容性与当前验证情况
 
-这是供安装试用的 0.1.0 初版。开发环境未能启动，**尚未在真实 DSH 中运行实测，也未执行 npm 打包或 DSH 安装验证**。
+当前版本 **0.1.1** 修复了桌面端 `0.2.1-rc.2` 报出的 `Unexpected token 'export'` 启动错误。0.1.0 错把浏览器入口以 ES Module 源码发布；修复版将入口注册到 DSH 的 `window.__ModuleLoader__`，以普通脚本加载。
+
+已在 V8 中复现旧版错误，并通过 6 项以模拟加载器和生命周期环境运行的回归检查：模块注册、合并脚本加载、激活与卸载、实例替换、DOM 就绪后启动和提前卸载取消启动。仓库提供 `npm test` 以 Node 的 `vm` 普通脚本环境重跑同一组检查，`npm pack` 前会自动执行。
+
+**当前开发环境仍不可用，尚未执行 Node 测试命令、npm 打包，或在真实 Windows / Electron / DSH 中实测模型折叠。**
 
 实现参照官方模型选择器当前源码，要求菜单包含以下结构：
 
@@ -84,8 +101,18 @@ dsh plugin --profile web add ./dsh-source-fold-0.1.0.tgz
 
 ## 实现
 
+浏览器入口是自包含的普通脚本，通过 `window.__ModuleLoader__.load({ id, factory })` 注册；工厂返回 Cordis 插件的 `name`、`inject` 和 `apply`，宿主入口仍为 Node ES Module。DOM 尚未就绪时延迟挂载，并允许卸载时取消。
+
 浏览器端以属性和 CSS 增强原生分组，不移动或删除 React 管理的节点。
 菜单变化通过 MutationObserver 合并到下一动画帧处理；卸载时恢复标题属性、模型可见性并清理监听器。
+
+## 变更记录
+
+### 0.1.1
+
+- 修复浏览器入口格式导致的 `Unexpected token 'export'` 启动失败。
+- 增加客户端加载与清理的回归测试，以及打包前检查。
+- 等待 DOM 就绪后再挂载，卸载时取消等待。
 
 ## License
 
