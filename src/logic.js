@@ -49,16 +49,33 @@ function matchesQuery(query, values) {
 }
 
 function panelMetrics(page, count, adjustable, anchor, viewport, noticeCount = 0) {
-  const width = Math.max(1, Math.min(page === 0 ? 320 : 376, viewport.width - 24));
-  const wanted = page === 0 ? (adjustable ? 182 : 112) + Math.min(1, noticeCount) * 56
-    : 122 + Math.max(1, count) * (page === 1 ? 68 : 58) + Math.min(2, noticeCount) * 52;
-  const above = Math.max(0, anchor.top - 24);
-  const below = Math.max(0, viewport.height - anchor.bottom - 24);
-  const side = above >= Math.min(wanted, 260) || above >= below ? "above" : "below";
-  const height = Math.max(1, Math.min(wanted, 540, side === "above" ? above : below));
-  const left = Math.max(12, Math.min(anchor.right - width, viewport.width - width - 12));
+  const scale = Math.max(.85, Math.min(1.15, Number(viewport.uiScale) || 1));
+  const margin = Math.min(12, Math.max(0, viewport.width / 8));
+  const originLeft = Number(viewport.left) || 0;
+  const originTop = Number(viewport.top) || 0;
+  const availableWidth = Math.max(1, viewport.width - 2 * margin);
+  const preferredWidth = (page === 0 ? 240 : 304) * scale;
+  const composerLimit = viewport.composerWidth > 0
+    ? Math.max((page === 0 ? 208 : 248) * scale, viewport.composerWidth * (page === 0 ? .48 : .70))
+    : preferredWidth;
+  const width = Math.min(preferredWidth, composerLimit, availableWidth);
+  const wanted = (page === 0
+    ? (adjustable ? 116 : 86) + Math.min(1, noticeCount) * 44
+    : 100 + Math.max(1, count) * (page === 1 ? 60 : 48) + Math.min(2, noticeCount) * 44) * scale;
+  const gap = 8 * scale;
+  const bottomEdge = originTop + viewport.height;
+  const anchorTop = Math.max(originTop + margin + gap, Math.min(anchor.top, bottomEdge - margin - gap));
+  const anchorBottom = Math.max(originTop + margin + gap, Math.min(anchor.bottom, bottomEdge - margin - gap));
+  const above = Math.max(0, anchorTop - originTop - margin - gap);
+  const below = Math.max(0, bottomEdge - anchorBottom - margin - gap);
+  const side = above >= Math.min(wanted, 210 * scale) || above >= below ? "above" : "below";
+  const heightLimit = page === 0 ? 230 * scale : Math.min(420 * scale, viewport.height * .62);
+  const height = Math.max(1, Math.min(wanted, heightLimit, side === "above" ? above : below));
+  const left = Math.max(originLeft + margin, Math.min(anchor.right - width, originLeft + viewport.width - width - margin));
   return {
-    width, height, left, side,
-    ...(side === "above" ? { bottom: viewport.height - anchor.top + 10 } : { top: anchor.bottom + 10 })
+    width, height, left, side, scale,
+    ...(side === "above"
+      ? { bottom: (viewport.layoutHeight || viewport.height) - anchorTop + gap }
+      : { top: anchorBottom + gap })
   };
 }

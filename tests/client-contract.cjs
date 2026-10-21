@@ -210,7 +210,7 @@ function verifyClient(code, logic, evaluate, testCase) {
       else check(layout.top + layout.height <= 788, "panel exceeds bottom");
     }
     const small = h.panelMetrics(0, 0, false, { top: 400, bottom: 430, right: 200 }, { width: 280, height: 600 });
-    check(small.width === 256 && small.height === 112, "unsupported model compact card sizing");
+    check(small.width <= 240 && small.height <= 86, "unsupported model compact card sizing");
   });
   testCase("source selection slides to its models and Back returns to sources", () => {
     const f = makeFixture();
@@ -277,6 +277,41 @@ function verifyClient(code, logic, evaluate, testCase) {
     const result = one(app.render(), attr("data-page", 1));
     equal(all(result, cls("dsf-source-row")).map(row => row.props["data-source-id"]), ["b"], "source filter");
   });
+  testCase("compact card follows UI font scale and composer width", () => {
+    const h = helpers();
+    const anchor = { top: 700, bottom: 730, right: 900 };
+    const normal = h.panelMetrics(0, 0, true, anchor, { width: 1000, height: 800, composerWidth: 720 });
+    check(normal.width === 240 && normal.height === 116, "normal control card should be compact");
+    const narrowComposer = h.panelMetrics(0, 0, true, anchor, { width: 1000, height: 800, composerWidth: 350 });
+    check(narrowComposer.width < normal.width && narrowComposer.width >= 200, "narrow composer should reduce card width without making it unusable");
+    const scaled = h.panelMetrics(0, 0, true, anchor, { width: 1000, height: 800, uiScale: 1.1 });
+    check(Math.abs(scaled.width / normal.width - 1.1) < .001 && Math.abs(scaled.height / normal.height - 1.1) < .001, "text and panel geometry must scale together");
+    const large = h.panelMetrics(0, 0, true, anchor, { width: 1000, height: 800, uiScale: 3 });
+    check(large.scale <= 1.15, "unexpected inherited font sizes must not create an oversized panel");
+  });
+  testCase("panel stays inside an offset visual viewport after keyboard or zoom changes", () => {
+    const h = helpers();
+    const viewport = { width: 340, height: 280, left: 100, top: 200, layoutHeight: 900 };
+    for (const anchor of [{ top: 580, bottom: 610, right: 500 }, { top: 215, bottom: 240, right: 300 }]) {
+      const p = h.panelMetrics(1, 100, true, anchor, viewport);
+      const top = p.top === undefined ? viewport.layoutHeight - p.bottom - p.height : p.top;
+      check(p.left >= 112 && p.left + p.width <= 428, "horizontal visible bounds");
+      check(top >= 212 && top + p.height <= 468, "vertical visible bounds");
+      check(p.height <= viewport.height * .62, "long lists should leave surrounding context visible");
+    }
+    const tiny = h.panelMetrics(0, 0, true, { top: 200, bottom: 230, right: 210 }, { width: 220, height: 400 });
+    check(tiny.width <= 196, "small windows must remain within margins");
+  });
+  testCase("control header contains the effort label without lightning or reset buttons", () => {
+    const f = makeFixture();
+    const app = open(f);
+    const controls = one(app.render(), attr("data-page", 0));
+    const header = one(controls, cls("dsf-control-top"));
+    check(all(header, node => node.type === "button" || typeof node.type === "function" || node.type === "svg").length === 0, "decorative controls must be absent");
+    check(all(header, cls("dsf-effort-label")).length === 1, "effort label must remain");
+    check(all(controls, cls("dsf-slider-captions")).length === 0, "control card should use the minimal reference slider layout");
+  });
+
 }
 
 module.exports = { verifyClient };

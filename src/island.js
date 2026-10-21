@@ -5,15 +5,13 @@ function createIsland(React, ReactDOM) {
       chevron: "m9 5 7 7-7 7",
       back: "m15 5-7 7 7 7",
       check: "m5 12 4 4L19 6",
-      zap: "m13 2-9 12h7l-1 8 10-12h-7l1-8Z",
-      reset: "M3 10a9 9 0 1 1 1.7 7.3M3 4v6h6",
       models: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
       search: "m20 20-4.5-4.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",
       close: "m6 6 12 12M18 6 6 18"
     };
     return h("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none",
       stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round",
-      "aria-hidden": true, className }, h("path", { d: paths[kind] || paths.models }));
+      "aria-hidden": true, className, style: { "--dsf-icon-size": size + "px" } }, h("path", { d: paths[kind] || paths.models }));
   }
   function ModelIsland({ controller, locked, sessionKey }) {
     const state = useSyncExternalStore(
@@ -144,21 +142,35 @@ function createIsland(React, ReactDOM) {
       const place = () => {
         const anchor = triggerRef.current?.getBoundingClientRect();
         if (!anchor) return;
-        const next = panelMetrics(page, count, adjustable, anchor,
-          { width: window.innerWidth, height: window.innerHeight },
-          (error ? 1 : 0) + (page === 1 ? failures.length : 0)
-        );
+        const visible = window.visualViewport;
+        const composer = rootRef.current?.closest("[data-composer-card]");
+        const fontSize = parseFloat(window.getComputedStyle(triggerRef.current).fontSize) || 13;
+        const next = panelMetrics(page, count, adjustable, anchor, {
+          width: visible?.width || window.innerWidth,
+          height: visible?.height || window.innerHeight,
+          left: visible?.offsetLeft || 0, top: visible?.offsetTop || 0,
+          layoutHeight: window.innerHeight,
+          composerWidth: composer?.getBoundingClientRect().width,
+          uiScale: fontSize / 13
+        }, (error ? 1 : 0) + (page === 1 ? failures.length : 0));
         setPosition(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
       };
       place();
       window.addEventListener("resize", place);
       window.addEventListener("scroll", place, true);
+      const visible = window.visualViewport;
+      visible?.addEventListener("resize", place);
+      visible?.addEventListener("scroll", place);
       const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
       if (triggerRef.current) observer?.observe(triggerRef.current);
+      const composer = rootRef.current?.closest("[data-composer-card]");
+      if (composer) observer?.observe(composer);
       return () => {
         observer?.disconnect();
         window.removeEventListener("resize", place);
         window.removeEventListener("scroll", place, true);
+        visible?.removeEventListener("resize", place);
+        visible?.removeEventListener("scroll", place);
       };
     }, [present, page, count, adjustable, error, failures.length]);
 
@@ -261,16 +273,16 @@ function createIsland(React, ReactDOM) {
     function pageHeader(title, subtitle) {
       return h("header", { className: "dsf-page-header" },
         h("button", { type: "button", className: "dsf-back", "aria-label": page === 2 ? "返回来源列表" : "返回思考强度", onClick: back },
-          h(Icon, { kind: "back", size: 18 })),
+          h(Icon, { kind: "back", size: 16 })),
         h("div", { className: "dsf-heading-copy" },
           h("div", { className: "dsf-page-title", title }, title),
           h("div", { className: "dsf-subtitle" }, subtitle)),
         h("button", { type: "button", className: "dsf-icon-button", "aria-label": "关闭模型面板", onClick: () => close(true) },
-          h(Icon, { kind: "close", size: 17 })));
+          h(Icon, { kind: "close", size: 15 })));
     }
     function searchBox(value, setValue, placeholder) {
       return h("div", { className: "dsf-search" },
-        h(Icon, { kind: "search", size: 17 }),
+        h(Icon, { kind: "search", size: 15 }),
         h("input", { type: "search", value, placeholder, "aria-label": placeholder,
           onChange: event => setValue(event.target.value) }));
     }
@@ -282,26 +294,22 @@ function createIsland(React, ReactDOM) {
     const progress = choices.length > 1 ? sliderIndex / (choices.length - 1) : 0;
     const panelStyle = position ? {
       width: position.width, height: position.height, left: position.left,
+      "--dsf-unit": position.scale,
       top: position.top ?? "auto", bottom: position.bottom ?? "auto",
       "--dsf-origin": position.side === "above" ? "bottom right" : "top right",
       "--dsf-close-y": position.side === "above" ? "12px" : "-12px"
-    } : { width: 320, height: 182, left: 0, top: 0, visibility: "hidden" };
+    } : { width: 240, height: 116, left: 0, top: 0, visibility: "hidden" };
 
     const controls = h("section", { className: "dsf-page dsf-controls", "data-page": 0,
       "aria-hidden": page !== 0, inert: page === 0 ? undefined : "" },
       h("div", { className: "dsf-control-top" },
-        h(Icon, { kind: "zap", size: 21 }),
-        h("div", { className: "dsf-effort-label", "aria-live": "polite" }, adjustable ? activeChoice?.name : "模型"),
-        h("button", { type: "button", className: "dsf-icon-button dsf-reset",
-          "aria-label": "恢复 Default 思考强度", title: "恢复 Default",
-          disabled: !adjustable || busy || sliderIndex === 0,
-          onClick: () => commitSlider(0) }, h(Icon, { kind: "reset", size: 21 }))),
+        h("div", { className: "dsf-effort-label", "aria-live": "polite" }, adjustable ? activeChoice?.name : "模型")),
       h("button", { type: "button", className: "dsf-model-title", disabled: busy,
         "aria-label": "切换模型，选择来源", onClick: () => navigate(1) },
         h("span", { title: modelName }, modelName), h(Icon, { kind: "chevron", size: 17 })),
       adjustable && h("div", { className: "dsf-slider-area", "data-dragging": Boolean(draft) },
         h("div", { className: "dsf-rail" },
-          h("div", { className: "dsf-fill", style: { width: "calc(" + (progress * 100) + "% + " + (18 - 36 * progress) + "px)" } }),
+          h("div", { className: "dsf-fill", style: { width: "calc(" + (progress * 100) + "% + " + ((17 - 34 * progress) * (position?.scale || 1)) + "px)" } }),
           h("div", { className: "dsf-track-core" },
             choices.map((choice, index) => h("span", { className: "dsf-tick", key: choice.id ?? "__default",
               "data-past": index <= sliderIndex, style: { left: (100 * index / (choices.length - 1)) + "%" } })),
@@ -317,8 +325,7 @@ function createIsland(React, ReactDOM) {
             onBlur: () => commitSlider(),
             onPointerCancel: () => { draftRef.current = null; setDraft(null); }
           })),
-        h("div", { className: "dsf-slider-captions" },
-          h("span", null, "Default"), h("span", null, choices.at(-1)?.name))),
+        null),
       error && h("div", { className: "dsf-control-error", role: "alert" }, error));
 
     const sourcePage = h("section", { className: "dsf-page", "data-page": 1,
@@ -336,7 +343,7 @@ function createIsland(React, ReactDOM) {
           return h("button", { key: group.id, type: "button", className: "dsf-row dsf-source-row",
             "data-source-id": group.id, "data-selected": current, disabled: busy || !group.models.length,
             onClick: () => { setSourceId(group.id); navigate(2); } },
-            h("span", { className: "dsf-source-icon" }, h(Icon, { kind: "models", size: 20 })),
+            h("span", { className: "dsf-source-icon" }, h(Icon, { kind: "models", size: 18 })),
             h("span", { className: "dsf-row-copy" },
               h("span", { className: "dsf-row-title", title: group.name }, group.name),
               h("span", { className: "dsf-subtitle" },
@@ -358,7 +365,7 @@ function createIsland(React, ReactDOM) {
             "data-selected": selected, "aria-pressed": selected, disabled: busy,
             onClick: () => chooseModel(source, model) },
             h("span", { className: "dsf-row-title", title: model.name }, model.name),
-            selected && h(Icon, { kind: "check", size: 22 }));
+            selected && h(Icon, { kind: "check", size: 18 }));
         }),
         !models.length && notice(modelQuery ? "没有匹配的模型" : "此来源暂无可用模型", false)));
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-source-fold",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness 模型岛：来源与模型分层滑动选择、自适应 Default 思考强度滑块",
   "type": "module",
   "main": "./index.js",
